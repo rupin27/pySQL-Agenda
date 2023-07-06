@@ -101,15 +101,6 @@ We will always use the same format as the one you can observe in this file.
 You may be interested to open this file and to read the instructions at the top of the excel sheet.
 
 
-
-## What do we look at?
-* Your code quality
-* Your commits quality
-* Your problem solving ability
-* Your technical choices
-
-
-
 ## What can you do?
 * You can use libraries
 * You can create as many database tables as you want
@@ -131,3 +122,14 @@ Use your own judgement.
 ## Resources
 * [Python SQLite3 documentation](https://docs.python.org/2/library/sqlite3.html)
 * [Python Excel parsing](https://github.com/python-excel/xlrd)
+
+### DEVELOPER NOTES:
+
+While using lookup_agenda.py, follow the following format to recieve the correct results:
+$> ./lookup_agenda.py location lounge
+
+1. For date, speaker, time_start, time_end: there is no need to encapsule the value in parenthesis
+2. For title: encapsule the value in parenthesis (eg. "xyz")
+3. For decription: depending on the type of text, encapsule the text with either ' ' or " " 
+
+
