@@ -25,20 +25,24 @@ class db_table:
     #
     # Example: table("users", { "id": "integer PRIMARY KEY", "name": "text" })
     #
+
     def __init__(self, name, schema):
         # error handling
         if not name:
             raise RuntimeError("invalid table name")
         if not schema:
             raise RuntimeError("invalid database schema")
-
         # init fields and initiate database connection
-        self.name    = name
-        self.schema  = schema
-        self.db_conn = sqlite3.connect(self.DB_NAME)
-        
-        # ensure the table is created
-        self.create_table()
+        self.name = name
+        self.schema = schema
+        self.db_conn = None
+        try:
+            self.db_conn = sqlite3.connect(self.DB_NAME)
+            # ensure the table is created
+            self.create_table()
+            
+        except sqlite3.Error as e:
+            raise RuntimeError("Failed to initialize the database table.") from e
 
     #
     # CREATE TABLE IF NOT EXISTS wrapper
@@ -46,17 +50,22 @@ class db_table:
     # If table already exists, nothing is done even if the schema has changed
     # If you need to apply schema changes, please delete the database file
     #
-    def create_table(self):
-        # { "id": "integer", "name": "text" } -> "id integer, name text"
-        columns_query_string = ', '.join([ "%s %s" % (k,v) for k,v in self.schema.iteritems() ])
 
-        # CREATE TABLE IF NOT EXISTS users (id integer PRIMARY KEY, name text)
-        #
-        # Note that columns are formatted into the string without using sqlite safe substitution mechanism
-        # The reason is that sqlite does not provide substitution mechanism for columns parameters
-        # In the context of this project, this is fine (no risk of user malicious input)
-        self.db_conn.execute("CREATE TABLE IF NOT EXISTS %s (%s)" % (self.name, columns_query_string))
-        self.db_conn.commit()
+    def create_table(self):
+        try:
+            # { "id": "integer", "name": "text" } -> "id integer, name text"
+            columns_query_string = ', '.join([ "%s %s" % (k,v) for k,v in self.schema.items() ])
+
+            # CREATE TABLE IF NOT EXISTS users (id integer PRIMARY KEY, name text)
+            #
+            # Note that columns are formatted into the string without using sqlite safe substitution mechanism
+            # The reason is that sqlite does not provide substitution mechanism for columns parameters
+            # In the context of this project, this is fine (no risk of user malicious input)
+            self.db_conn.execute("CREATE TABLE IF NOT EXISTS %s (%s)" % (self.name, columns_query_string))
+            self.db_conn.commit()
+
+        except sqlite3.Error as e:
+            raise RuntimeError("Failed to create the database table.") from e
 
     #
     # SELECT wrapper
@@ -79,25 +88,30 @@ class db_table:
         # build query string
         columns_query_string = ", ".join(columns)
         query                = "SELECT %s FROM %s" % (columns_query_string, self.name)
-        # build where query string
+        # build where query string 
         if where:
-            where_query_string = [ "%s = '%s'" % (k,v) for k,v in where.iteritems() ]
-            query             += " WHERE " + ' AND '.join(where_query_string)
+            # using parameterized queries
+            where_query_string = [f"{k} = ?" for k in where.keys()]
+            query += " WHERE " + " AND ".join(where_query_string)
+            values = list(where.values())
+        try:
+            result = []
+            cursor = self.db_conn.execute(query, values)
+            # SELECT id, name FROM users [ WHERE id=42 AND name=John ]
+            #
+            # Note that columns are formatted into the string without using sqlite safe substitution mechanism
+            # The reason is that sqlite does not provide substitution mechanism for columns parameters
+            # In the context of this project, this is fine (no risk of user malicious input)
+            for row in cursor:
+                result_row = {}
+                # convert from (val1, val2, val3) to { col1: val1, col2: val2, col3: val3 }
+                for i in range(0, len(columns)):
+                    result_row[columns[i]] = row[i]
+                result.append(result_row)
+            return result
         
-        result = []
-        # SELECT id, name FROM users [ WHERE id=42 AND name=John ]
-        #
-        # Note that columns are formatted into the string without using sqlite safe substitution mechanism
-        # The reason is that sqlite does not provide substitution mechanism for columns parameters
-        # In the context of this project, this is fine (no risk of user malicious input)
-        for row in self.db_conn.execute(query):
-            result_row = {}
-            # convert from (val1, val2, val3) to { col1: val1, col2: val2, col3: val3 }
-            for i in range(0, len(columns)):
-                result_row[columns[i]] = row[i]
-            result.append(result_row)
-
-        return result
+        except sqlite3.Error as e:
+            raise RuntimeError("Failed to execute SELECT query.") from e
 
     #
     # INSERT INTO wrapper
@@ -120,11 +134,37 @@ class db_table:
         # Note that columns are formatted into the string without using sqlite safe substitution mechanism
         # The reason is that sqlite does not provide substitution mechanism for columns parameters
         # In the context of this project, this is fine (no risk of user malicious input)
-        cursor = self.db_conn.cursor()
-        cursor.execute("INSERT INTO %s (%s) VALUES (%s)" % (self.name, columns_query, values_query))
-        cursor.close()
-        self.db_conn.commit()
-        return cursor.lastrowid
+        try:
+            cursor = self.db_conn.cursor()
+            cursor.execute("INSERT INTO %s (%s) VALUES (%s)" % (self.name, columns_query, values_query))
+            cursor.close()
+            self.db_conn.commit()
+            return cursor.lastrowid
+        
+        except sqlite3.Error as e:
+            raise RuntimeError("Failed to execute INSERT query.") from e
+
+    #
+    # INSERT INTO MANY wrapper
+    # provides a more efficient way to insert multiple records into the database at once compared to individual insert operations for each record.
+    # reduces the overhead of multiple round-trips between the application and the database, resulting in improved performance.
+    # \param item  dict<string, string>   item to be insert in DB, mapping column to value
+    #
+    # \return id of the created record
+    #
+
+    def insert_many(self, items):
+        columns_query = ", ".join(items[0].keys())
+        values_query = ", ".join(["(" + ", ".join(["'%s'" % v for v in item.values()]) + ")" for item in items])
+        try:
+            cursor = self.db_conn.cursor()
+            cursor.execute("INSERT INTO %s (%s) VALUES %s" % (self.name, columns_query, values_query))
+            cursor.close()
+            self.db_conn.commit()
+            return cursor.lastrowid
+
+        except sqlite3.Error as e:
+            raise RuntimeError("Failed to execute INSERT_MANY query.") from e
 
     #
     # UPDATE wrapper
@@ -137,21 +177,26 @@ class db_table:
     #
     # Example table.update({ "name": "Simon" }, { "id": 42 })
     #
+
     def update(self, values, where):
         # build set & where queries
-        set_query   = ", ".join(["%s = '%s'" % (k,v) for k,v in values.iteritems()])
-        where_query = " AND ".join(["%s = '%s'" % (k,v) for k,v in where.iteritems()])
+        set_query   = ", ".join(["%s = '%s'" % (k,v) for k,v in values.items()])
+        where_query = " AND ".join(["%s = '%s'" % (k,v) for k,v in where.items()])
 
         # UPDATE users SET name = Simon WHERE id = 42
         #
         # Note that columns are formatted into the string without using sqlite safe substitution mechanism
         # The reason is that sqlite does not provide substitution mechanism for columns parameters
         # In the context of this project, this is fine (no risk of user malicious input)
-        cursor = self.db_conn.cursor()
-        cursor.execute("UPDATE %s SET %s WHERE %s" % (self.name, set_query, where_query))
-        cursor.close()
-        self.db_conn.commit()
-        return cursor.rowcount
+        try:
+            cursor = self.db_conn.cursor()
+            cursor.execute("UPDATE %s SET %s WHERE %s" % (self.name, set_query, where_query))
+            cursor.close()
+            self.db_conn.commit()
+            return cursor.rowcount
+        
+        except sqlite3.Error as e:
+            raise RuntimeError("Failed to execute UPDATE query.") from e       
 
     #
     # Close the database connection
