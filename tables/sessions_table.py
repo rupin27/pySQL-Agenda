@@ -1,5 +1,6 @@
 class Session:
     def __init__(self, parent_id, date, time_start, time_end, session_title, location, description):
+
         # attributes of a session
         self.id = "id"
         self.parent_id = "parent_id"
@@ -9,6 +10,7 @@ class Session:
         self.title = "title"
         self.location = "location"
         self.description = "description"
+
         # dictionary to store the session data
         self.data = {
             self.parent_id: parent_id,
