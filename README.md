@@ -128,16 +128,24 @@ Use your own judgement.
 
 When using lookup_agenda.py, please follow the specified format to ensure correct results:
 
-$> ./lookup_agenda.py column xyz
+```
+./lookup_agenda.py column xyz
+```
 
 1. For date, speaker, time_start, and time_end, there is no need to enclose the value in parentheses. For example:
+```
 $> ./lookup_agenda.py date 2023-07-10
+```
 
 2. For title, in some cases, enclose the value in double quotation marks. This is due to some content including single quotation. For example:
+```
 $> ./lookup_agenda.py title "Maria's Restraunt"
+```
 
 3. For description, depending on the type of text, enclose the text in either single quotes (' ') or double quotes (" "). For example:
+```
 $> ./lookup_agenda.py description '<p>&nbsp;This is the Breakfast session!</p>'
+```
 
 By following these guidelines, you will receive accurate and expected results from the lookup_agenda.py script without encountering any problems in the command line.
 
